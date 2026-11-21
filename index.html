@@ -402,6 +402,20 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
 .seg button { padding: 0.6rem 0.2rem; display: flex; align-items: center; justify-content: center; gap: 0.3rem; }
 .seg button[aria-pressed="true"] { border-color: var(--cue); box-shadow: inset 0 0 0 2px var(--cue); }
 .sw { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; }
+
+/* リモコン：枠に映すiPadの映像 */
+.pad-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.pad-label {
+  position: absolute; left: 8px; top: 8px;
+  background: rgba(0, 0, 0, 0.7); color: #fff;
+  font-size: 0.75rem; font-weight: 700; border-radius: 6px; padding: 0.15rem 0.5rem;
+  pointer-events: none;
+}
+.pad-dot { z-index: 2; }
+.wide-toggle {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 0.7rem; font-weight: 600; font-size: 0.9rem;
+}
 </style>
 </head>
 <body>
@@ -586,7 +600,10 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
 
     <div id="r-view-ptr" class="r-view" hidden>
       <p class="hint ptr-hint">枠の中をなぞると、iPadの映像の同じ位置にポインターが表示されます。</p>
+      <button class="toggle wide-toggle" id="ptr-preview" aria-pressed="true">iPadの映像を枠に映す</button>
       <div class="pad" id="ptr-pad">
+        <img class="pad-img" id="pad-img" alt="" hidden>
+        <div class="pad-label" id="pad-label" hidden>暗転中</div>
         <div class="pad-dot" id="pad-dot"></div>
       </div>
       <div class="ptr-row">
@@ -13084,10 +13101,13 @@ async function keepAwake() {
 // 画面に触れるたびに確認（ユーザー操作の中でないと再生できないため）
 document.addEventListener('pointerdown', startNoSleep, { passive: true });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
+  if (document.visibilityState !== 'visible') {
+    if (peer.role === 'remote') send({ t: 'preview', on: false });
+    return;
+  }
   keepAwake();
   // 復帰したら最新の状態をもらい直す
-  if (peer.role === 'remote') send({ t: 'hello' });
+  if (peer.role === 'remote') { send({ t: 'hello' }); updatePreview(); }
 });
 
 // ---------------------------------------------------------------- 接続コード（SDP）の圧縮
@@ -13374,6 +13394,9 @@ async function startPlayerPairing() {
 
   const pc = newPeer('player');
   attachChannel(pc.createDataChannel('ctl', { ordered: true }));
+  // 映像のプレビュー用（操作の命令が画像の送信待ちにならないよう別のチャネルにする）
+  imgDc = pc.createDataChannel('img', { ordered: true });
+  imgDc.binaryType = 'arraybuffer';
   try {
     await pc.setLocalDescription(await pc.createOffer());
     await waitIce(pc);
@@ -13429,6 +13452,7 @@ function playerConnected(recovered) {
 }
 function playerLost() {
   clearInterval(stateTimer);
+  setPreview(false);
   // 観客に見える画面には何も出さない。長押しメニューから接続し直す。
 }
 
@@ -13513,6 +13537,7 @@ function handleCommand(m) {
       break;
     }
     case 'ptr': handlePointer(m); break;
+    case 'preview': setPreview(!!m.on); break;
     case 'hello': sendState(); break;
   }
 }
@@ -13550,6 +13575,42 @@ function handlePointer(m) {
   } else if (!ptrFrame) {
     ptrFrame = requestAnimationFrame(drawPointer);
   }
+}
+
+// プレビュー：iPadの映像を小さなJPEGにしてiPhoneへ送る
+let imgDc = null;
+let previewTimer = 0, previewBusy = false, lastFrameKey = '';
+const snapCanvas = document.createElement('canvas');
+const snapCtx = snapCanvas.getContext('2d');
+const PREVIEW_MAX = 480;      // 長辺のピクセル数
+const PREVIEW_INTERVAL = 250; // 送る間隔（ミリ秒）
+
+function setPreview(on) {
+  clearInterval(previewTimer);
+  previewTimer = 0;
+  lastFrameKey = '';
+  if (on) { previewTimer = setInterval(previewTick, PREVIEW_INTERVAL); previewTick(); }
+}
+function previewTick() {
+  if (previewBusy || !imgDc || imgDc.readyState !== 'open') return;
+  if (imgDc.bufferedAmount > 96 * 1024) return;   // 送りきれていないときは間引く
+  const vw = pv.videoWidth, vh = pv.videoHeight;
+  if (!vw || !vh || pv.readyState < 2) return;
+  const key = `${currentId}:${pv.currentTime.toFixed(3)}`;
+  if (key === lastFrameKey) return;                // 止まっている間は同じ画像を送らない
+  lastFrameKey = key;
+  const k = Math.min(1, PREVIEW_MAX / Math.max(vw, vh));
+  snapCanvas.width = Math.round(vw * k);
+  snapCanvas.height = Math.round(vh * k);
+  try { snapCtx.drawImage(pv, 0, 0, snapCanvas.width, snapCanvas.height); } catch (_) { return; }
+  previewBusy = true;
+  snapCanvas.toBlob((blob) => {
+    if (!blob || !imgDc || imgDc.readyState !== 'open') { previewBusy = false; return; }
+    blob.arrayBuffer().then((buf) => {
+      try { imgDc.send(buf); } catch (_) {}
+      previewBusy = false;
+    }, () => { previewBusy = false; });
+  }, 'image/jpeg', 0.6);
 }
 
 // 長押しでメニュー（観客側には普段なにも表示しない）
@@ -13618,7 +13679,9 @@ async function acceptOffer(code) {
     return false;
   }
   const pc = newPeer('remote');
-  pc.addEventListener('datachannel', (e) => attachChannel(e.channel));
+  pc.addEventListener('datachannel', (e) => {
+    if (e.channel.label === 'img') attachImg(e.channel); else attachChannel(e.channel);
+  });
   try {
     await pc.setRemoteDescription({ type: 'offer', sdp });
     await pc.setLocalDescription(await pc.createAnswer());
@@ -13651,6 +13714,7 @@ function remoteConnected() {
   keepAwake();
   send({ t: 'hello' });
   updateLink();
+  updatePreview();
 }
 function remoteLost() { updateLink(); }
 
@@ -13747,6 +13811,7 @@ function handleState(s) {
   $$('.rates button').forEach((b) =>
     b.setAttribute('aria-pressed', String(Number(b.dataset.rate) === s.rate)));
   renderRemoteList(s);
+  $('#pad-label').hidden = !s.black;
   updateLink();
 }
 
@@ -13803,6 +13868,7 @@ function setTab(name) {
   $('#r-view-ctl').hidden = ptr;
   $('#r-view-ptr').hidden = !ptr;
   if (ptr) sizePad();
+  updatePreview();
 }
 $('#tab-ctl').addEventListener('click', () => setTab('ctl'));
 $('#tab-ptr').addEventListener('click', () => setTab('ptr'));
@@ -13879,6 +13945,35 @@ $$('[data-psize]').forEach((b) => b.addEventListener('click', () => {
   $$('[data-psize]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   if (ptrPos) queuePtr(ptrMsg());
 }));
+
+// ---- 枠に映すiPadの映像
+let previewWanted = true;
+let padImgUrl = null;
+function attachImg(ch) {
+  ch.binaryType = 'arraybuffer';
+  ch.addEventListener('message', (e) => {
+    const blob = e.data instanceof Blob ? e.data : new Blob([e.data], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    const img = $('#pad-img');
+    const old = padImgUrl;
+    padImgUrl = url;
+    img.onload = () => { if (old) URL.revokeObjectURL(old); };
+    img.src = url;
+    if (previewWanted) img.hidden = false;
+  });
+}
+function updatePreview() {
+  // ポインター画面を開いているときだけ映像を送ってもらう（電池と通信の節約）
+  const on = previewWanted && peer.connected && !$('#remote-ui').hidden &&
+    !$('#r-view-ptr').hidden && document.visibilityState === 'visible';
+  send({ t: 'preview', on });
+  if (!previewWanted) $('#pad-img').hidden = true;
+}
+$('#ptr-preview').addEventListener('click', () => {
+  previewWanted = !previewWanted;
+  $('#ptr-preview').setAttribute('aria-pressed', String(previewWanted));
+  updatePreview();
+});
 
 $('#r-menu').addEventListener('click', () => {
   $('#rmenu-status').textContent = peer.connected ? 'iPadと接続中' : 'iPadとの接続が切れています';
