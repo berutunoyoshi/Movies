@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Video Remote">
+<meta name="theme-color" content="#1b2330">
+<title>Video Remote</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ホーム -->
+<section id="home" class="screen">
+  <div class="wrap">
+    <h1 class="title">Video Remote</h1>
+    <p class="lead">iPadで再生している動画を、iPhoneから操作します。再生画面にはシークバーなどを一切表示しません。</p>
+    <div class="roles">
+      <button class="role" id="go-player">
+        <span class="role-name">この端末で再生する</span>
+        <span class="role-desc">iPadなど、映像を映す側</span>
+      </button>
+      <button class="role" id="go-remote">
+        <span class="role-name">この端末でリモコン操作する</span>
+        <span class="role-desc">iPhoneなど、手元で操作する側</span>
+      </button>
+    </div>
+    <p class="hint">はじめに2台を同じネットワークにつないでください。iPhoneの「インターネット共有」にiPadを接続すれば、外出先でも使えます。</p>
+    <p class="hint" id="offline-status"></p>
+  </div>
+</section>
+
+<!-- 再生側：動画選択 -->
+<section id="player-setup" class="screen" hidden>
+  <div class="wrap">
+    <button class="back" data-back="home">戻る</button>
+    <h2>再生する動画を選ぶ</h2>
+    <label class="file-pick">
+      <input type="file" id="file-input" accept="video/*">
+      <span id="file-label">動画を選ぶ</span>
+    </label>
+    <p class="hint">「写真」または「ファイル」から選べます。動画はこのiPadの中だけで再生され、どこにも送信されません。</p>
+    <button class="primary" id="player-next" disabled>iPhoneと接続する</button>
+  </div>
+</section>
+
+<!-- 再生側：ペアリング -->
+<section id="pair-player" class="screen" hidden>
+  <div class="wrap wide">
+    <button class="back" id="pp-back">戻る</button>
+    <h2>iPhoneと接続する</h2>
+    <div class="pair-grid">
+      <div class="pair-step">
+        <h3>1. iPhoneでこのコードを読み取る</h3>
+        <div class="qr" id="pp-qr"><p class="hint">コードを作成しています…</p></div>
+        <div class="code-tools">
+          <button class="small" id="pp-share">コードを共有（AirDrop）</button>
+        </div>
+      </div>
+      <div class="pair-step">
+        <h3>2. iPhoneに出たコードをこのカメラに映す</h3>
+        <div class="cam"><video id="pp-cam" playsinline muted></video></div>
+        <div class="code-tools">
+          <button class="small" id="pp-flip">カメラを切り替える</button>
+        </div>
+        <details class="paste">
+          <summary>カメラを使わずに接続する</summary>
+          <textarea id="pp-paste" rows="3" placeholder="iPhoneから共有されたコードを貼り付け"></textarea>
+          <button class="small" id="pp-paste-go">このコードで接続</button>
+        </details>
+      </div>
+    </div>
+    <p class="status" id="pp-status"></p>
+  </div>
+</section>
+
+<!-- 再生側：再生画面（何も表示しない） -->
+<section id="player-stage" class="screen stage" hidden>
+  <video id="pv" playsinline webkit-playsinline preload="auto" disablepictureinpicture disableremoteplayback x-webkit-airplay="deny"></video>
+  <div id="blackout"></div>
+  <div id="stage-menu" hidden>
+    <div class="menu-box">
+      <p class="menu-status" id="menu-status"></p>
+      <button id="m-reconnect">iPhoneと接続し直す</button>
+      <button id="m-change">動画を選び直す</button>
+      <button id="m-home">最初の画面に戻る</button>
+      <button id="m-close" class="ghost">閉じる</button>
+    </div>
+  </div>
+</section>
+
+<!-- リモコン側：ペアリング -->
+<section id="remote-pair" class="screen" hidden>
+  <div class="wrap">
+    <button class="back" id="rp-back">戻る</button>
+    <div id="rp-step1">
+      <h2>iPadのコードを読み取る</h2>
+      <div class="cam"><video id="rp-cam" playsinline muted></video></div>
+      <div class="code-tools">
+        <button class="small" id="rp-flip">カメラを切り替える</button>
+      </div>
+      <details class="paste">
+        <summary>カメラを使わずに接続する</summary>
+        <textarea id="rp-paste" rows="3" placeholder="iPadから共有されたコードを貼り付け"></textarea>
+        <button class="small" id="rp-paste-go">このコードで接続</button>
+      </details>
+    </div>
+    <div id="rp-step2" hidden>
+      <h2>このコードをiPadのカメラに映す</h2>
+      <div class="qr" id="rp-qr"></div>
+      <div class="code-tools">
+        <button class="small" id="rp-share">コードを共有（AirDrop）</button>
+      </div>
+    </div>
+    <p class="status" id="rp-status"></p>
+  </div>
+</section>
+
+<!-- リモコン側：操作画面 -->
+<section id="remote-ui" class="screen" hidden>
+  <div class="remote">
+    <header class="r-head">
+      <span class="tally" id="r-tally"></span>
+      <span class="r-name" id="r-name">接続中</span>
+      <button class="small ghost" id="r-menu">接続</button>
+    </header>
+
+    <div class="r-warn" id="r-warn" hidden></div>
+
+    <div class="clock">
+      <span class="clock-cur" id="r-cur">0:00.0</span>
+      <span class="clock-dur">/ <span id="r-dur">0:00.0</span></span>
+    </div>
+
+    <input type="range" id="r-seek" min="0" max="0" step="0.1" value="0" aria-label="再生位置">
+
+    <div class="transport">
+      <button data-step="-10">−10秒</button>
+      <button data-step="-1">−1秒</button>
+      <button class="play" id="r-play" aria-label="再生">▶</button>
+      <button data-step="1">+1秒</button>
+      <button data-step="10">+10秒</button>
+    </div>
+
+    <div class="fine">
+      <button id="r-start">先頭へ</button>
+      <button data-step="-0.1">−0.1秒</button>
+      <button data-step="0.1">+0.1秒</button>
+    </div>
+
+    <div class="jump">
+      <input type="text" id="r-jump" inputmode="decimal" placeholder="例 1:23.5" autocomplete="off">
+      <button id="r-jump-go">この位置へ</button>
+    </div>
+
+    <div class="toggles">
+      <button class="toggle" id="r-black" aria-pressed="false">暗転</button>
+      <button class="toggle" id="r-mute" aria-pressed="false">消音</button>
+      <button class="toggle" id="r-loop" aria-pressed="false">ループ</button>
+    </div>
+
+    <div class="rates" role="group" aria-label="再生速度">
+      <button data-rate="0.5">0.5×</button>
+      <button data-rate="1">1×</button>
+      <button data-rate="1.5">1.5×</button>
+      <button data-rate="2">2×</button>
+    </div>
+  </div>
+
+  <div id="remote-menu" hidden>
+    <div class="menu-box">
+      <p class="menu-status" id="rmenu-status"></p>
+      <button id="rm-reconnect">iPadと接続し直す</button>
+      <button id="rm-home">最初の画面に戻る</button>
+      <button id="rm-close" class="ghost">閉じる</button>
+    </div>
+  </div>
+</section>
+
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
