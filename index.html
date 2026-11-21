@@ -348,16 +348,14 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
 #pointer {
   position: absolute; left: 0; top: 0;
   width: var(--psz, 28px); height: var(--psz, 28px);
-  margin: calc(var(--psz, 28px) / -2) 0 0 calc(var(--psz, 28px) / -2);
   border-radius: 50%;
   background: var(--pcol, #ff3b30);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85), 0 0 calc(var(--psz, 28px) * 0.9) var(--pcol, #ff3b30);
+  border: 3px solid rgba(255, 255, 255, 0.9);
   opacity: 0;
-  transition: opacity 0.35s ease, transform 0.06s linear;
+  transition: opacity 0.3s ease;   /* 位置の移動にはアニメーションを付けない（残像防止） */
   pointer-events: none;
-  will-change: transform;
 }
-#pointer.on { opacity: 1; transition: opacity 0.1s ease, transform 0.06s linear; }
+#pointer.on { opacity: 1; transition: opacity 0.08s ease; }
 
 /* リモコン：タブ */
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
@@ -13523,7 +13521,11 @@ function handleCommand(m) {
 const ptrEl = $('#pointer');
 const PTR_SIZE = [0, 0.025, 0.04, 0.065]; // 画面の短辺に対する割合（小・中・大）
 const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0));
-function placePointer(x, y) {
+let ptrTarget = null, ptrFrame = 0;
+function drawPointer() {
+  // 受信した最新の位置だけを1フレームに1回描く
+  ptrFrame = 0;
+  if (!ptrTarget) return;
   const W = stage.clientWidth, H = stage.clientHeight;
   const vw = pv.videoWidth, vh = pv.videoHeight;
   let dw = W, dh = H, ox = 0, oy = 0;
@@ -13531,7 +13533,8 @@ function placePointer(x, y) {
     const k = Math.min(W / vw, H / vh);
     dw = vw * k; dh = vh * k; ox = (W - dw) / 2; oy = (H - dh) / 2;
   }
-  ptrEl.style.transform = `translate(${ox + x * dw}px, ${oy + y * dh}px)`;
+  const r = ptrEl.offsetWidth / 2;
+  ptrEl.style.transform = `translate(${Math.round(ox + ptrTarget.x * dw - r)}px, ${Math.round(oy + ptrTarget.y * dh - r)}px)`;
 }
 function handlePointer(m) {
   if (m.c) ptrEl.style.setProperty('--pcol', m.c);
@@ -13540,15 +13543,12 @@ function handlePointer(m) {
     ptrEl.style.setProperty('--psz', Math.max(12, Math.round(base * PTR_SIZE[m.s])) + 'px');
   }
   if (!m.on) { ptrEl.classList.remove('on'); return; }
+  ptrTarget = { x: clamp01(m.x), y: clamp01(m.y) };
   if (!ptrEl.classList.contains('on')) {
-    // 消えていた位置から滑ってこないよう、最初の1回は移動アニメーションなしで置く
-    ptrEl.style.transition = 'none';
-    placePointer(clamp01(m.x), clamp01(m.y));
-    void ptrEl.offsetWidth;
-    ptrEl.style.transition = '';
+    drawPointer();               // 表示する前に位置を確定させる
     ptrEl.classList.add('on');
-  } else {
-    placePointer(clamp01(m.x), clamp01(m.y));
+  } else if (!ptrFrame) {
+    ptrFrame = requestAnimationFrame(drawPointer);
   }
 }
 
