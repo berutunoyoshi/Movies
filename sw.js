@@ -1,17 +1,12 @@
 // オフライン用キャッシュ。ファイルを更新したら VERSION を上げる
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'video-remote-' + VERSION;
 const ASSETS = [
   './',
   './index.html',
-  './style.css',
-  './app.js',
   './manifest.webmanifest',
-  './vendor/qrcode.js',
-  './vendor/jsQR.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {
