@@ -301,7 +301,7 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
 .jump button { padding: 0.7rem 1rem; white-space: nowrap; }
 .toggles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
 .tracks { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-.toggle[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.toggle[aria-pressed="true"], .ptr-row .toggle[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .rates { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
 .rates button[aria-pressed="true"] { border-color: var(--cue); box-shadow: inset 0 0 0 2px var(--cue); }
 
@@ -343,6 +343,67 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
 .r-list .rl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .r-list .rl-tag { font-size: 0.75rem; font-weight: 700; color: var(--cue-ink); background: var(--cue); border-radius: 999px; padding: 0.1rem 0.55rem; }
 .r-list li.current button { border-color: var(--cue); box-shadow: inset 4px 0 0 var(--cue); }
+
+/* ポインター（再生側） */
+#pointer {
+  position: absolute; left: 0; top: 0;
+  width: var(--psz, 28px); height: var(--psz, 28px);
+  margin: calc(var(--psz, 28px) / -2) 0 0 calc(var(--psz, 28px) / -2);
+  border-radius: 50%;
+  background: var(--pcol, #ff3b30);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85), 0 0 calc(var(--psz, 28px) * 0.9) var(--pcol, #ff3b30);
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.06s linear;
+  pointer-events: none;
+  will-change: transform;
+}
+#pointer.on { opacity: 1; transition: opacity 0.1s ease, transform 0.06s linear; }
+
+/* リモコン：タブ */
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.tabs button { border: 0; background: transparent; border-radius: 8px; padding: 0.55rem; font-weight: 700; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.r-view { display: grid; gap: 1.1rem; }
+
+/* リモコン：ポインター操作 */
+.ptr-hint { margin: 0; }
+.pad {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 25% 33.333%,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 25% 33.333%,
+    #0d1117;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  overflow: hidden;
+}
+.pad-dot {
+  position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; background: var(--pcol, #ff3b30);
+  box-shadow: 0 0 0 2px #fff;
+  opacity: 0; pointer-events: none;
+}
+.pad-dot.on { opacity: 1; }
+.ptr-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; }
+.ptr-row button, .seg button {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 0.8rem 0.9rem; font-weight: 600; font-size: 0.9rem;
+}
+.ptr-row .play.mini {
+  width: 3.4rem; height: 3.4rem; padding: 0; border-radius: 50%;
+  background: var(--cue); color: var(--cue-ink); border: 0; font-size: 1.3rem;
+}
+.ptr-opts { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0.5rem; }
+.seg { display: grid; grid-auto-flow: column; gap: 0.3rem; }
+.seg button { padding: 0.6rem 0.2rem; display: flex; align-items: center; justify-content: center; gap: 0.3rem; }
+.seg button[aria-pressed="true"] { border-color: var(--cue); box-shadow: inset 0 0 0 2px var(--cue); }
+.sw { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; }
 </style>
 </head>
 <body>
@@ -416,6 +477,7 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
 <section id="player-stage" class="screen stage" hidden>
   <video id="pv" playsinline webkit-playsinline preload="auto" disablepictureinpicture disableremoteplayback x-webkit-airplay="deny"></video>
   <div id="blackout"></div>
+  <div id="pointer"></div>
   <div id="stage-menu" hidden>
     <div class="menu-box">
       <p class="menu-status" id="menu-status"></p>
@@ -464,6 +526,13 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
     </header>
 
     <div class="r-warn" id="r-warn" hidden></div>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-ctl" aria-selected="true">再生操作</button>
+      <button role="tab" id="tab-ptr" aria-selected="false">ポインター</button>
+    </div>
+
+    <div id="r-view-ctl" class="r-view">
 
     <div class="clock">
       <span class="clock-cur" id="r-cur">0:00.0</span>
@@ -514,6 +583,31 @@ html:has(#player-stage:not([hidden])) body { background: #000; }
       <h3 id="r-list-title">プレイリスト</h3>
       <p class="hint r-list-hint">タップすると、その動画の先頭で待機します。</p>
       <ol class="r-list" id="r-list"></ol>
+    </div>
+    </div>
+
+    <div id="r-view-ptr" class="r-view" hidden>
+      <p class="hint ptr-hint">枠の中をなぞると、iPadの映像の同じ位置にポインターが表示されます。</p>
+      <div class="pad" id="ptr-pad">
+        <div class="pad-dot" id="pad-dot"></div>
+      </div>
+      <div class="ptr-row">
+        <button class="play mini" id="r-play2" aria-label="再生">▶</button>
+        <button class="toggle" id="ptr-keep" aria-pressed="false">指を離しても残す</button>
+        <button id="ptr-clear">消す</button>
+      </div>
+      <div class="ptr-opts">
+        <div class="seg" role="group" aria-label="ポインターの色">
+          <button data-pcolor="#ff3b30" aria-pressed="true"><span class="sw" style="background:#ff3b30"></span>赤</button>
+          <button data-pcolor="#34c759" aria-pressed="false"><span class="sw" style="background:#34c759"></span>緑</button>
+          <button data-pcolor="#ffd60a" aria-pressed="false"><span class="sw" style="background:#ffd60a"></span>黄</button>
+        </div>
+        <div class="seg" role="group" aria-label="ポインターの大きさ">
+          <button data-psize="1" aria-pressed="false">小</button>
+          <button data-psize="2" aria-pressed="true">中</button>
+          <button data-psize="3" aria-pressed="false">大</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -12968,15 +13062,34 @@ function setStatus(el, text, kind) {
 }
 
 let wakeLock = null;
+// iOSではWake Lockが効かないことがあるため、無音・極小の動画をループ再生して画面のスリープを防ぐ
+const noSleep = document.createElement('video');
+noSleep.setAttribute('playsinline', '');
+noSleep.setAttribute('muted', '');
+noSleep.muted = true;
+noSleep.loop = true;
+noSleep.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMzbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAl10cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAAAAABAAAAAAHVbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAgABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABgG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAUBzdGJsAAAAwHN0c2QAAAAAAAAAAQAAALBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANmF2Y0MBZAAK/+EAGWdkAAqscgRewEQAAAMABAAAAwAIPEiWEYABAAZo6EOyyLD9+PgAAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAC3QAAAt0AAAAGHN0dHMAAAAAAAAAAQAAAAIAAEAAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAIAAAABAAAAHHN0c3oAAAAAAAAAAAAAAAIAAALRAAAADAAAABRzdGNvAAAAAAAAAAEAAANjAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2MC4xNi4xMDAAAAAIZnJlZQAAAuVtZGF0AAACvAYF//+43EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTE2IGRlYmxvY2s9MTowOjAgYW5hbHlzZT0weDM6MHgxMzMgbWU9dW1oIHN1Ym1lPTEwIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MjQgY2hyb21hX21lPTEgdHJlbGxpcz0yIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgc3RpdGNoYWJsZT0xIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz04IGJfcHlyYW1pZD0yIGJfYWRhcHQ9MiBiX2JpYXM9MCBkaXJlY3Q9MyB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD02MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTUxLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAANZYiBABv//RjvApNwGQAAAAhBmggtiI++gA==';
+noSleep.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1';
+document.body.appendChild(noSleep);
+
+function startNoSleep() {
+  if (noSleep.paused) noSleep.play().catch(() => {});
+}
 async function keepAwake() {
+  startNoSleep();
   try {
-    if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+    if ('wakeLock' in navigator && document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) {
       wakeLock = await navigator.wakeLock.request('screen');
     }
-  } catch (_) { /* 非対応・拒否時は何もしない */ }
+  } catch (_) { /* 非対応・拒否時は無音動画のみ */ }
 }
+// 画面に触れるたびに確認（ユーザー操作の中でないと再生できないため）
+document.addEventListener('pointerdown', startNoSleep, { passive: true });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && peer.connected) keepAwake();
+  if (document.visibilityState !== 'visible') return;
+  keepAwake();
+  // 復帰したら最新の状態をもらい直す
+  if (peer.role === 'remote') send({ t: 'hello' });
 });
 
 // ---------------------------------------------------------------- 接続コード（SDP）の圧縮
@@ -13089,10 +13202,9 @@ async function flipScanner() {
 }
 
 // ---------------------------------------------------------------- WebRTC
-const peer = { pc: null, dc: null, connected: false, role: null, dropTimer: 0 };
+const peer = { pc: null, dc: null, connected: false, role: null };
 
 function closePeer() {
-  clearTimeout(peer.dropTimer);
   try { peer.dc && peer.dc.close(); } catch (_) {}
   try { peer.pc && peer.pc.close(); } catch (_) {}
   peer.pc = null; peer.dc = null; peer.connected = false;
@@ -13105,9 +13217,9 @@ function newPeer(role) {
   pc.addEventListener('connectionstatechange', () => {
     const st = pc.connectionState;
     if (pc !== peer.pc) return;
-    clearTimeout(peer.dropTimer);
+    // 'disconnected' は一時的なことが多いので切断扱いにしない（データチャネルが閉じたら切断）
     if (st === 'failed' || st === 'closed') onLost();
-    else if (st === 'disconnected') peer.dropTimer = setTimeout(onLost, 4000);
+    else if (st === 'connected') onRecovered();
   });
   peer.pc = pc;
   return pc;
@@ -13137,6 +13249,11 @@ function waitIce(pc, ms = 3000) {
 }
 function send(msg) {
   if (peer.dc && peer.dc.readyState === 'open') peer.dc.send(JSON.stringify(msg));
+}
+function onRecovered() {
+  if (peer.connected || !peer.dc || peer.dc.readyState !== 'open') return;
+  peer.connected = true;
+  if (peer.role === 'player') playerConnected(true); else remoteConnected();
 }
 function onLost() {
   if (!peer.connected) return;
@@ -13232,6 +13349,7 @@ function loadIndex(i, autoplay) {
 
 $('#player-next').addEventListener('click', () => {
   if (!items.length) return;
+  keepAwake();
   if (currentId === null) loadIndex(0, false);
   // ユーザー操作の中で一度再生しておくと、後からリモコンで play() できるようになる
   const wasPaused = pv.paused;
@@ -13303,11 +13421,10 @@ $('#pp-back').addEventListener('click', () => {
   show('player-setup');
 });
 
-function playerConnected() {
+function playerConnected(recovered) {
   clearTimeout(pairTimeout);
   stopScanner();
-  show('player-stage');
-  closeStageMenu();
+  if (!recovered) { show('player-stage'); closeStageMenu(); }
   clearInterval(stateTimer);
   stateTimer = setInterval(sendState, 250);
   sendState();
@@ -13318,7 +13435,7 @@ function playerLost() {
 }
 
 function sendState() {
-  if (!peer.connected || peer.role !== 'player') return;
+  if (peer.role !== 'player' || !peer.dc || peer.dc.readyState !== 'open') return;
   send({
     t: 'state',
     cur: pv.currentTime || 0,
@@ -13328,6 +13445,8 @@ function sendState() {
     rate: pv.playbackRate,
     muted: pv.muted,
     black: $('#blackout').classList.contains('on'),
+    vw: pv.videoWidth || 0,
+    vh: pv.videoHeight || 0,
     index: curIndex(),
     list: items.map((it) => it.name),
     loopMode,
@@ -13371,6 +13490,7 @@ function handleCommand(m) {
   switch (m.t) {
     case 'play': playVideo(); break;
     case 'pause': pv.pause(); break;
+    case 'toggle': if (pv.paused || pv.ended) playVideo(); else pv.pause(); break;
     case 'seek': seekTo(Number(m.time) || 0, !!m.fast); break;
     case 'step': seekTo(pv.currentTime + (Number(m.d) || 0), false); break;
     case 'rate': pv.playbackRate = pv.defaultPlaybackRate = Number(m.v) || 1; break;
@@ -13394,7 +13514,41 @@ function handleCommand(m) {
       else loadIndex(i - 1, playing);
       break;
     }
+    case 'ptr': handlePointer(m); break;
     case 'hello': sendState(); break;
+  }
+}
+
+// ポインター：映像の表示範囲（上下左右の黒帯を除く）に合わせて位置を決める
+const ptrEl = $('#pointer');
+const PTR_SIZE = [0, 0.025, 0.04, 0.065]; // 画面の短辺に対する割合（小・中・大）
+const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+function placePointer(x, y) {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const vw = pv.videoWidth, vh = pv.videoHeight;
+  let dw = W, dh = H, ox = 0, oy = 0;
+  if (vw && vh) {
+    const k = Math.min(W / vw, H / vh);
+    dw = vw * k; dh = vh * k; ox = (W - dw) / 2; oy = (H - dh) / 2;
+  }
+  ptrEl.style.transform = `translate(${ox + x * dw}px, ${oy + y * dh}px)`;
+}
+function handlePointer(m) {
+  if (m.c) ptrEl.style.setProperty('--pcol', m.c);
+  if (m.s && PTR_SIZE[m.s]) {
+    const base = Math.min(stage.clientWidth, stage.clientHeight) || 768;
+    ptrEl.style.setProperty('--psz', Math.max(12, Math.round(base * PTR_SIZE[m.s])) + 'px');
+  }
+  if (!m.on) { ptrEl.classList.remove('on'); return; }
+  if (!ptrEl.classList.contains('on')) {
+    // 消えていた位置から滑ってこないよう、最初の1回は移動アニメーションなしで置く
+    ptrEl.style.transition = 'none';
+    placePointer(clamp01(m.x), clamp01(m.y));
+    void ptrEl.offsetWidth;
+    ptrEl.style.transition = '';
+    ptrEl.classList.add('on');
+  } else {
+    placePointer(clamp01(m.x), clamp01(m.y));
   }
 }
 
@@ -13439,8 +13593,9 @@ let dragging = false;
 let lastState = null;
 let lastFastSeek = 0;
 let lastListKey = '';
+let lastStateAt = 0;
 
-$('#go-remote').addEventListener('click', startRemotePairing);
+$('#go-remote').addEventListener('click', () => { keepAwake(); startRemotePairing(); });
 
 async function startRemotePairing() {
   closePeer();
@@ -13491,17 +13646,39 @@ $('#rp-back').addEventListener('click', () => { stopScanner(); closePeer(); show
 function remoteConnected() {
   show('remote-ui');
   $('#remote-menu').hidden = true;
-  $('#r-tally').className = 'tally live';
-  $('#r-warn').hidden = true;
   lastListKey = '';
+  lastStateAt = performance.now();
+  keepAwake();
   send({ t: 'hello' });
+  updateLink();
 }
-function remoteLost() {
-  $('#r-tally').className = 'tally lost';
+function remoteLost() { updateLink(); }
+
+// 接続状態の表示：切断／応答待ち／自動再生ブロック
+function updateLink() {
+  if ($('#remote-ui').hidden) return;
+  const tally = $('#r-tally');
   const w = $('#r-warn');
-  w.textContent = 'iPadとの接続が切れました。右上の「接続」から接続し直してください（iPad側は画面を長押し）。';
-  w.hidden = false;
+  const stale = performance.now() - lastStateAt > 2500;
+  let msg = '';
+  if (!peer.connected) {
+    tally.className = 'tally lost';
+    msg = 'iPadとの接続が切れました。右上の「接続」から接続し直してください（iPad側は画面を長押し）。';
+  } else if (stale) {
+    tally.className = 'tally lost';
+    msg = 'iPadからの応答を待っています…';
+  } else {
+    tally.className = 'tally live';
+    if (lastState && lastState.needsTap) msg = 'iPadが自動再生を止めています。iPadの画面を1回タップしてください。';
+  }
+  w.textContent = msg;
+  w.hidden = !msg;
 }
+setInterval(() => {
+  if (peer.role !== 'remote' || $('#remote-ui').hidden) return;
+  if (peer.connected && performance.now() - lastStateAt > 2500) send({ t: 'hello' });
+  updateLink();
+}, 1000);
 
 const seek = $('#r-seek');
 function paintSeek() {
@@ -13540,6 +13717,7 @@ function renderRemoteList(s) {
 function handleState(s) {
   if (s.t !== 'state') return;
   lastState = s;
+  lastStateAt = performance.now();
   const list = s.list || [];
   $('#r-name').textContent = s.index >= 0 && list[s.index]
     ? `${s.index + 1}/${list.length}　${list[s.index]}` : '動画が選ばれていません';
@@ -13550,9 +13728,14 @@ function handleState(s) {
     $('#r-cur').textContent = fmt(s.cur);
     paintSeek();
   }
-  const play = $('#r-play');
-  play.textContent = s.paused ? '▶' : '❚❚';
-  play.setAttribute('aria-label', s.paused ? '再生' : '一時停止');
+  [$('#r-play'), $('#r-play2')].forEach((play) => {
+    play.textContent = s.paused ? '▶' : '❚❚';
+    play.setAttribute('aria-label', s.paused ? '再生' : '一時停止');
+  });
+  if (s.vw && s.vh) {
+    const ar = s.vw / s.vh;
+    if (Math.abs(ar - padAr) > 0.001) { padAr = ar; sizePad(); }
+  }
   $('#r-black').setAttribute('aria-pressed', String(!!s.black));
   $('#r-mute').setAttribute('aria-pressed', String(!!s.muted));
   $('#r-auto').setAttribute('aria-pressed', String(!!s.auto));
@@ -13564,13 +13747,7 @@ function handleState(s) {
   $$('.rates button').forEach((b) =>
     b.setAttribute('aria-pressed', String(Number(b.dataset.rate) === s.rate)));
   renderRemoteList(s);
-  const w = $('#r-warn');
-  if (s.needsTap) {
-    w.textContent = 'iPadが自動再生を止めています。iPadの画面を1回タップしてください。';
-    w.hidden = false;
-  } else if (peer.connected) {
-    w.hidden = true;
-  }
+  updateLink();
 }
 
 // スライダー：ドラッグ中は大まかに、離した位置へ正確にシーク
@@ -13591,8 +13768,9 @@ seek.addEventListener('change', () => {
   setTimeout(() => { dragging = false; }, 400);
 }));
 
+$('#r-play2').addEventListener('click', () => send({ t: 'toggle' }));
 $('#r-play').addEventListener('click', () => {
-  send({ t: lastState && !lastState.paused ? 'pause' : 'play' });
+  send({ t: 'toggle' });
 });
 $$('[data-step]').forEach((b) => b.addEventListener('click', () =>
   send({ t: 'step', d: Number(b.dataset.step) })));
@@ -13616,6 +13794,91 @@ $('#r-loop').addEventListener('click', () => {
 });
 $$('[data-rate]').forEach((b) => b.addEventListener('click', () =>
   send({ t: 'rate', v: Number(b.dataset.rate) })));
+
+// ---- タブ
+function setTab(name) {
+  const ptr = name === 'ptr';
+  $('#tab-ctl').setAttribute('aria-selected', String(!ptr));
+  $('#tab-ptr').setAttribute('aria-selected', String(ptr));
+  $('#r-view-ctl').hidden = ptr;
+  $('#r-view-ptr').hidden = !ptr;
+  if (ptr) sizePad();
+}
+$('#tab-ctl').addEventListener('click', () => setTab('ctl'));
+$('#tab-ptr').addEventListener('click', () => setTab('ptr'));
+
+// ---- ポインター
+const pad = $('#ptr-pad');
+const padDot = $('#pad-dot');
+let padAr = 16 / 9;
+let ptrColor = '#ff3b30', ptrSize = 2, ptrKeep = false;
+let ptrPos = null, ptrTouching = false, ptrRaf = 0, ptrPending = null;
+
+function sizePad() {
+  // 映像と同じ縦横比の枠にする（縦長の動画でも位置がずれないように）
+  const cw = pad.parentElement.clientWidth;
+  if (!cw) return;
+  const maxH = window.innerHeight * 0.58;
+  let w = cw, h = cw / padAr;
+  if (h > maxH) { h = maxH; w = h * padAr; }
+  pad.style.width = Math.round(w) + 'px';
+  pad.style.height = Math.round(h) + 'px';
+}
+window.addEventListener('resize', sizePad);
+
+function queuePtr(msg) {
+  // 1フレームに1回だけ送る
+  ptrPending = msg;
+  if (!ptrRaf) ptrRaf = requestAnimationFrame(() => {
+    ptrRaf = 0;
+    if (ptrPending) { send(ptrPending); ptrPending = null; }
+  });
+}
+function ptrMsg() { return { t: 'ptr', on: true, x: ptrPos.x, y: ptrPos.y, c: ptrColor, s: ptrSize }; }
+function padMove(e) {
+  const r = pad.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+  ptrPos = { x, y };
+  padDot.style.left = (x * 100) + '%';
+  padDot.style.top = (y * 100) + '%';
+  padDot.classList.add('on');
+  queuePtr(ptrMsg());
+}
+function ptrOff() {
+  ptrPos = null;
+  padDot.classList.remove('on');
+  queuePtr({ t: 'ptr', on: false });
+}
+pad.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  ptrTouching = true;
+  try { pad.setPointerCapture(e.pointerId); } catch (_) {}
+  padMove(e);
+});
+pad.addEventListener('pointermove', (e) => { if (ptrTouching) padMove(e); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => pad.addEventListener(ev, () => {
+  if (!ptrTouching) return;
+  ptrTouching = false;
+  if (!ptrKeep) ptrOff();
+}));
+$('#ptr-keep').addEventListener('click', () => {
+  ptrKeep = !ptrKeep;
+  $('#ptr-keep').setAttribute('aria-pressed', String(ptrKeep));
+  if (!ptrKeep && !ptrTouching && ptrPos) ptrOff();
+});
+$('#ptr-clear').addEventListener('click', ptrOff);
+$$('[data-pcolor]').forEach((b) => b.addEventListener('click', () => {
+  ptrColor = b.dataset.pcolor;
+  $$('[data-pcolor]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  pad.style.setProperty('--pcol', ptrColor);
+  if (ptrPos) queuePtr(ptrMsg());
+}));
+$$('[data-psize]').forEach((b) => b.addEventListener('click', () => {
+  ptrSize = Number(b.dataset.psize);
+  $$('[data-psize]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  if (ptrPos) queuePtr(ptrMsg());
+}));
 
 $('#r-menu').addEventListener('click', () => {
   $('#rmenu-status').textContent = peer.connected ? 'iPadと接続中' : 'iPadとの接続が切れています';
